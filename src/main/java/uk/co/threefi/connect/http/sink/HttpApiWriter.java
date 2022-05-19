@@ -41,7 +41,8 @@ public class HttpApiWriter {
     HttpApiWriter(final HttpSinkConfig config) {
         this.config = config;
 		Properties prop = new Properties();
-		prop.put("bootstrap.servers", "10.252.73.37:9092,10.252.73.42:9092,10.252.73.43:9092"); // server, kafka host
+		//prop.put("bootstrap.servers", "10.252.73.37:9092,10.252.73.42:9092,10.252.73.43:9092"); // server, kafka host
+		prop.put("bootstrap.servers", "172.20.171.179:9092");
 		prop.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer");   
 		prop.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer"); 
 		////prop.put("acks", "all");   
@@ -51,7 +52,7 @@ public class HttpApiWriter {
     }
 
     public void write(final Collection<SinkRecord> records) throws IOException {
-    	log.info("SSUL write 1234");
+    	log.info("SSUL write 1234!");
         for (SinkRecord record : records) {
 
             // build batch key
@@ -174,8 +175,13 @@ public class HttpApiWriter {
         
         log.info("SSUL content: " + content.toString());
         log.info("SSUL config.ResponseTopic: " +  config.ResponseTopic);
+        //try {
+        log.info("SSUL produce send");
         producer.send(new ProducerRecord<String,String>(config.ResponseTopic, content.toString()));
-        
+        log.info("SSUL write 5678!");
+        //}catch(Exception e) {
+        //	log.info("catch kafka produce");
+        //}
         in.close();
         con.disconnect();
     }
