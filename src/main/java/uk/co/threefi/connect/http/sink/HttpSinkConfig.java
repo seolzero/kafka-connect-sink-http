@@ -37,6 +37,10 @@ public class HttpSinkConfig extends AbstractConfig {
     public static final String HTTP_API_URL = "http.api.url";
     private static final String HTTP_API_URL_DOC = "HTTP API URL.";
     private static final String HTTP_API_URL_DISPLAY = "HTTP URL";
+    
+    public static final String KAFKA_API_URL = "kafka.api.url";
+    private static final String KAFKA_API_URL_DOC = "KAFKA API URL.";
+    private static final String KAFKA_API_URL_DISPLAY = "KAFKA URL";
 
     public static final String REQUEST_METHOD = "request.method";
     private static final String REQUEST_METHOD_DOC = "HTTP Request Method.";
@@ -139,6 +143,17 @@ public class HttpSinkConfig extends AbstractConfig {
                     1,
                     ConfigDef.Width.LONG,
                     HTTP_API_URL_DISPLAY
+            )
+            .define(
+            		KAFKA_API_URL,
+                    ConfigDef.Type.STRING,
+                    ConfigDef.NO_DEFAULT_VALUE,
+                    ConfigDef.Importance.HIGH,
+                    KAFKA_API_URL_DOC,
+                    CONNECTION_GROUP,
+                    2,
+                    ConfigDef.Width.LONG,
+                    KAFKA_API_URL_DISPLAY
             )
 
             // Retries
@@ -301,6 +316,7 @@ public class HttpSinkConfig extends AbstractConfig {
             );
 
     public final String ResponseTopic;
+    public final String KafkaApiUrl;
     public final String httpApiUrl;
     public final RequestMethod requestMethod;
     public final int maxRetries;
@@ -319,6 +335,7 @@ public class HttpSinkConfig extends AbstractConfig {
 
     public HttpSinkConfig(Map<?, ?> props) {
         super(CONFIG_DEF, props);
+        KafkaApiUrl = getString(KAFKA_API_URL);
         ResponseTopic = getString(RESPONSE_TOPIC);
         httpApiUrl = getString(HTTP_API_URL);
         maxRetries = getInt(MAX_RETRIES);

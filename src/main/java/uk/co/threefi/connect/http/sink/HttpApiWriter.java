@@ -42,7 +42,7 @@ public class HttpApiWriter {
         this.config = config;
 		Properties prop = new Properties();
 		//prop.put("bootstrap.servers", "10.252.73.37:9092,10.252.73.42:9092,10.252.73.43:9092"); // server, kafka host
-		prop.put("bootstrap.servers", "172.20.171.179:9092");
+		prop.put("bootstrap.servers", config.KafkaApiUrl);
 		prop.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer");   
 		prop.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer"); 
 		////prop.put("acks", "all");   
@@ -175,6 +175,7 @@ public class HttpApiWriter {
         
         log.info("SSUL content: " + content.toString());
         log.info("SSUL config.ResponseTopic: " +  config.ResponseTopic);
+        log.info("SSUL config.KafkaApiUrl: " +  config.KafkaApiUrl);
         //try {
         log.info("SSUL produce send");
         producer.send(new ProducerRecord<String,String>(config.ResponseTopic, content.toString()));
