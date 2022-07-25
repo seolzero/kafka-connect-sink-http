@@ -131,9 +131,16 @@ public class HttpApiWriter {
             }
         }
 
-        OutputStreamWriter writer = new OutputStreamWriter(con.getOutputStream(), "UTF-8");
-        writer.write(builder.toString());
-        writer.close();
+        
+        try {
+        	OutputStreamWriter writer = new OutputStreamWriter(con.getOutputStream(), "UTF-8");
+            writer.write(builder.toString());
+            writer.close();
+            
+        }catch (Exception e) {
+        	log.info("writer exception detection: " + e);
+        }
+
 
         //clear batch
         batches.remove(formattedKeyPattern);
@@ -152,39 +159,51 @@ public class HttpApiWriter {
                 error.append(inputLine);
             }
             in.close();
+            log.info("HTTP Response code: " + status
+                    + ", " + con.getResponseMessage() + ", " + error
+//                    + ", Submitted payload: " + builder.toString()
+                    + ", url: " + formattedUrl
+                    + ", topic: " + record0.topic());
+            /*
             throw new IOException("HTTP Response code: " + status
                     + ", " + con.getResponseMessage() + ", " + error
                     + ", Submitted payload: " + builder.toString()
                     + ", url:" + formattedUrl);
-        }
-        log.debug(", response code: " + status
-                + ", " + con.getResponseMessage()
-                + ", headers: " + config.headers);
-        log.info("SSUL INFO response code: " + status
-                + ", " + con.getResponseMessage()
-                + ", headers: " + config.headers + ", url:" + formattedUrl + ", Submitted payload: " + builder.toString());
+            */
+        }else {
+            log.debug(", response code: " + status
+                    + ", " + con.getResponseMessage()
+                    + ", headers: " + config.headers);
+            log.info("SSUL INFO response code: " + status
+                    + ", " + con.getResponseMessage()
+                    + ", headers: " + config.headers + ", url:" + formattedUrl );
+//                    + ", Submitted payload: " + builder.toString()
+                    
 
-        // write the response to the log
-        BufferedReader in = new BufferedReader(
-                new InputStreamReader(con.getInputStream()));
-        String inputLine;
-        StringBuffer content = new StringBuffer();
-        while ((inputLine = in.readLine()) != null) {
-            content.append(inputLine);
-        } 
-        
-        log.info("SSUL content: " + content.toString());
-        log.info("SSUL config.ResponseTopic: " +  config.ResponseTopic);
-        log.info("SSUL config.KafkaApiUrl: " +  config.KafkaApiUrl);
-        //try {
-        log.info("SSUL produce send");
-        producer.send(new ProducerRecord<String,String>(config.ResponseTopic, content.toString()));
-        log.info("SSUL write 5678!");
-        //}catch(Exception e) {
-        //	log.info("catch kafka produce");
-        //}
-        in.close();
+            // write the response to the log
+            BufferedReader in = new BufferedReader(
+                    new InputStreamReader(con.getInputStream()));
+            String inputLine;
+            StringBuffer content = new StringBuffer();
+            while ((inputLine = in.readLine()) != null) {
+                content.append(inputLine);
+            } 
+            
+            log.info("SSUL content: " + content.toString());
+            log.info("SSUL config.ResponseTopic: " +  config.ResponseTopic);
+            log.info("SSUL config.KafkaApiUrl: " +  config.KafkaApiUrl);
+            //try {
+            log.info("SSUL produce send");
+            producer.send(new ProducerRecord<String,String>(config.ResponseTopic, content.toString()));
+            log.info("SSUL write 5678!");
+            //}catch(Exception e) {
+            //	log.info("catch kafka produce");
+            //}
+            in.close();
+           
+        }
         con.disconnect();
+
     }
 
     private String buildRecord(SinkRecord record) {
