@@ -38,12 +38,13 @@ public class HttpApiWriter {
 	private final HttpSinkConfig config;
 	private static final Logger log = LoggerFactory.getLogger(HttpApiWriter.class);
 	private Map<String, List<SinkRecord>> batches = new HashMap<>();
+	private JSONObject bucket = new JSONObject();
+	private JSONObject finalBucket = new JSONObject();
+	private JSONObject responseResultObject = new JSONObject();
+	private ArrayList<String> exceptKeys = new ArrayList<String>();
 	private KafkaProducer<String, String> producer;
-	int batchIndex = 0;
-	int batchSize = 10;
-	List<Double> s1List = new ArrayList<Double>();
-	List<Double> s2List = new ArrayList<Double>();
-	List<String> timestampList = new ArrayList<String>();
+	private static Integer betchSize = 10;
+	private JSONParser jsonParser = new JSONParser();
 
 	HttpApiWriter(final HttpSinkConfig config) {
 		this.config = config;
@@ -54,6 +55,7 @@ public class HttpApiWriter {
 		//// prop.put("acks", "all");
 
 		producer = new KafkaProducer<String, String>(prop);
+		exceptKeys.add("tmpA");
 
 	}
 
@@ -88,25 +90,13 @@ public class HttpApiWriter {
 	}
 
 
-
-	List<Double> s1subList = new ArrayList<>();
-	List<Double> s2subList = new ArrayList<>();
-	List<String> timestampsubList = new ArrayList<>();
-	String sensor1_id;
-	String sensor2_id;
-	JSONObject sensorArrJsonObject = new JSONObject();
-	JSONParser jsonParser = new JSONParser();
-
 	private void sendBatch(String formattedKeyPattern) throws IOException {
 		List<SinkRecord> records = batches.get(formattedKeyPattern);
 		SinkRecord record0 = records.get(0);
 		//System.out.println("records.size(): " + records.size());
 		StringBuilder builder = new StringBuilder(config.batchPrefix);
 		//System.out.println("records.value().toString(): " + records.toString());
-		int recordIndex = 0;
 		for (SinkRecord record : records) {
-
-
 			if (record == null) {
 				continue;
 			}
@@ -114,169 +104,182 @@ public class HttpApiWriter {
 			if (record.value() == null) {
 				continue;
 			}
-
-			//System.out.println("record.value().toString(): " + record.value().toString());
-			// {"sensor1_id":"angle","sensor2_id":"heading","sensor1_value":"40","sensor1_rowtime":"2022-05-25 11:07:18.249","tmpA":1,"sensor2_value":"243"}
-
+			
 			try {	
-				recordIndex++;
-				//System.out.println("recordIndex: "+ recordIndex);
+				
 				JSONObject jsonObject = (JSONObject) jsonParser.parse(record.value().toString());
-				//System.out.println("jsonObject: " + jsonObject);
-				sensor1_id = (String) jsonObject.get("sensor1_id");
-				//sensor2_id = (String) jsonObject.get("sensor2_id");
-				double sensor1_value = Double.parseDouble((String) jsonObject.get("sensor1_value"));
-				s1List.add(sensor1_value);
-				//System.out.println("s1List: " + s1List);
-				//double sensor2_value = Double.parseDouble((String) jsonObject.get("sensor2_value"));
-				//s2List.add(sensor2_value);
-				String sensor1_rowtime = (String) jsonObject.get("sensor1_rowtime");
-				timestampList.add(sensor1_rowtime);
+				System.out.println(">>>>>>>>>>>>>>>>>>jsonObject: "+ jsonObject);
+				
+				for(Object key : jsonObject.keySet()) {
+					// record에 제외하고 싶은 키는 skip
+					if(exceptKeys.contains(key)) {
+						continue;
+					}
+					// bucket의 각 key들의 value는 ArrayList 타입이므로 value를 담기 위한 변수 생성
+					ArrayList<String> arr = new ArrayList<String>();
+					// bucket에 해당 key가 없을 경우
+					if(bucket.get(key) == null) {
+						arr.add((String) jsonObject.get(key).toString());
+					}
+					// 해당 key가 있을 경우. bucket의 해당 key의 값을 가져와서 add
+					else {
+						arr = (ArrayList<String>) bucket.get(key);
+						arr.add((String) jsonObject.get(key).toString());
+					}
+					// bucket의 해당 key에 array list value 대입
+					bucket.put(key, arr);
+					
+					System.out.println("bucket: " + bucket);
+
+					if(isReadyToSend(bucket)) {
+						System.out.println(" >> ready here !!");
+
+						// slice
+						bucket = sliding(bucket);
+						System.out.println("builder append bucket: " + bucket);
+
+						// builder send
+						ArrayList<String> TimeStampList = (ArrayList<String>) bucket.get("rowtime");
+						String lastTimeStamp = TimeStampList.get(betchSize-1);
+						finalBucket = (JSONObject) bucket.clone();
+						finalBucket.put("name", record0.topic());
+						System.out.println("finalBucket: " + finalBucket);
+						builder.append(finalBucket);
+						
+						
+						////////////////////////
+						/*build.append -> send*/
+						String formattedUrl = config.httpApiUrl
+								.replace("${key}", record0.key() == null ? "" : record0.key().toString())
+								.replace("${topic}", record0.topic());
+						HttpSinkConfig.RequestMethod requestMethod = config.requestMethod;
+						URL url = new URL(formattedUrl);
+						HttpURLConnection con = (HttpURLConnection) url.openConnection();
+						con.setDoOutput(true);
+						con.setRequestMethod(requestMethod.toString());
+
+						// add headers
+						for (String headerKeyValue : config.headers.split(config.headerSeparator)) {
+							if (headerKeyValue.contains(":")) {
+								con.setRequestProperty(headerKeyValue.split(":")[0], headerKeyValue.split(":")[1]);
+							}
+						}
+
+						try {
+							OutputStreamWriter writer = new OutputStreamWriter(con.getOutputStream(), "UTF-8");
+							log.info("WRITE builder.toString(): " + builder.toString());
+							writer.write(builder.toString());
+							writer.close();
+
+						} catch (Exception e) {
+							log.info("writer exception detection: " + e);
+						}
+
+						/* batches clear */
+						batches.remove(formattedKeyPattern);
+						log.debug("Submitted payload: " + builder.toString() + ", url:" + formattedUrl);
+
+
+
+
+						// get response
+						int status = con.getResponseCode();
+						if (Response.Status.Family.familyOf(status) != Response.Status.Family.SUCCESSFUL) {
+							BufferedReader in = new BufferedReader(new InputStreamReader(con.getErrorStream()));
+							String inputLine;
+							StringBuffer error = new StringBuffer();
+							while ((inputLine = in.readLine()) != null) {
+								error.append(inputLine);
+							}
+							in.close();
+							log.info("HTTP Response code: " + status + ", " + con.getResponseMessage() + ", " + error
+									//		                    + ", Submitted payload: " + builder.toString()
+									+ ", url: " + formattedUrl + ", topic: " + record0.topic());
+						} else {
+							log.debug(", response code: " + status + ", " + con.getResponseMessage() + ", headers: "
+									+ config.headers);
+							log.info("SSUL INFO response code: " + status + ", " + con.getResponseMessage() + ", headers: "
+									+ config.headers + ", url:" + formattedUrl);
+							
+							// write the response to the log
+							BufferedReader in = new BufferedReader(new InputStreamReader(con.getInputStream()));
+							String inputLine;
+							StringBuffer content = new StringBuffer();
+							while ((inputLine = in.readLine()) != null) {
+								content.append(inputLine);
+							}
+
+							responseResultObject.put("timestamp", lastTimeStamp);
+							responseResultObject.put("input", finalBucket);
+							responseResultObject.put("result", content.toString());
+							log.info("SSUL content: " + content.toString());
+							log.info("SSUL config.ResponseTopic: " + config.ResponseTopic);
+							log.info("SSUL config.KafkaApiUrl: " + config.KafkaApiUrl);
+							log.info("SSUL produce send");
+							producer.send(new ProducerRecord<String, String>(config.ResponseTopic, responseResultObject.toString()));
+							log.info("SSUL write 5678!");
+							in.close();
+
+						}
+						con.disconnect();
+						
+					}
+					
+				}
+
 			} catch (ParseException e) {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
 			}
 
-
-
-			if(s1List.size() > batchSize) {
-				//System.out.println("recordIndex: " + recordIndex + "  ,s1List.size(): " + s1List.size());
-				s1subList = s1List.subList(0, batchSize);
-				//s2subList = s2List.subList(0, batchSize);
-				timestampsubList = timestampList.subList(0, batchSize);
-
-				sensorArrJsonObject.put(sensor1_id, s1subList);
-				//sensorArrJsonObject.put(sensor2_id, s2subList);
-				sensorArrJsonObject.put("timestamp", timestampsubList);
-				//System.out.println("sensorArrJsonObject: " + sensorArrJsonObject);
-
-				builder.append(sensorArrJsonObject);
-				System.out.println("builder.length(): " + builder.length());
-
-
-
-
-
-				String formattedUrl = config.httpApiUrl
-						.replace("${key}", record0.key() == null ? "" : record0.key().toString())
-						.replace("${topic}", record0.topic());
-				HttpSinkConfig.RequestMethod requestMethod = config.requestMethod;
-				URL url = new URL(formattedUrl);
-				HttpURLConnection con = (HttpURLConnection) url.openConnection();
-				con.setDoOutput(true);
-				con.setRequestMethod(requestMethod.toString());
-
-				// add headers
-				for (String headerKeyValue : config.headers.split(config.headerSeparator)) {
-					if (headerKeyValue.contains(":")) {
-						con.setRequestProperty(headerKeyValue.split(":")[0], headerKeyValue.split(":")[1]);
-					}
-				}
-
-				try {
-					OutputStreamWriter writer = new OutputStreamWriter(con.getOutputStream(), "UTF-8");
-					log.info("WRITE builder.toString(): " + builder.toString());
-					writer.write(builder.toString());
-					writer.close();
-
-				} catch (Exception e) {
-					log.info("writer exception detection: " + e);
-				}
-
-				// clear batch
-				//if(records.size() == recordIndex) {
-				System.out.println("!!!clear records batch!!! recordIndex: " + recordIndex);
-				batches.remove(formattedKeyPattern);
-
-				//}
-				log.debug("Submitted payload: " + builder.toString() + ", url:" + formattedUrl);
-
-
-
-
-				// get response
-				int status = con.getResponseCode();
-				if (Response.Status.Family.familyOf(status) != Response.Status.Family.SUCCESSFUL) {
-					BufferedReader in = new BufferedReader(new InputStreamReader(con.getErrorStream()));
-					String inputLine;
-					StringBuffer error = new StringBuffer();
-					while ((inputLine = in.readLine()) != null) {
-						error.append(inputLine);
-					}
-					in.close();
-					log.info("HTTP Response code: " + status + ", " + con.getResponseMessage() + ", " + error
-							//		                    + ", Submitted payload: " + builder.toString()
-							+ ", url: " + formattedUrl + ", topic: " + record0.topic());
-					/*
-					 * throw new IOException("HTTP Response code: " + status + ", " +
-					 * con.getResponseMessage() + ", " + error + ", Submitted payload: " +
-					 * builder.toString() + ", url:" + formattedUrl);
-					 */
-
-
-
-				} else {
-					log.debug(", response code: " + status + ", " + con.getResponseMessage() + ", headers: "
-							+ config.headers);
-					log.info("SSUL INFO response code: " + status + ", " + con.getResponseMessage() + ", headers: "
-							+ config.headers + ", url:" + formattedUrl);
-					//		                    + ", Submitted payload: " + builder.toString()
-
-					// write the response to the log
-					BufferedReader in = new BufferedReader(new InputStreamReader(con.getInputStream()));
-					String inputLine;
-					StringBuffer content = new StringBuffer();
-					while ((inputLine = in.readLine()) != null) {
-						content.append(inputLine);
-					}
-
-					log.info("SSUL content: " + content.toString());
-					log.info("SSUL config.ResponseTopic: " + config.ResponseTopic);
-					log.info("SSUL config.KafkaApiUrl: " + config.KafkaApiUrl);
-					// try {
-					log.info("SSUL produce send");
-					producer.send(new ProducerRecord<String, String>(config.ResponseTopic, content.toString()));
-					log.info("SSUL write 5678!");
-					// }catch(Exception e) {
-					// log.info("catch kafka produce");
-					// }
-					in.close();
-
-
-
-				}
-				con.disconnect();
-				/*
-				 * 배열 초기화
-				 * */
-				System.out.println("========================================clear");
-				//s1subList.clear();
-				//timestampsubList.clear();
-				sensorArrJsonObject.clear();
-				System.out.println("sensorArrJsonObject: " + sensorArrJsonObject);
-				s1List.remove(0);
-				timestampList.remove(0);
-				builder.setLength(0);
-
-
-			}
-
+			/*
+			 * builder 초기화
+			 * */
+			System.out.println("========================================clear");
+			builder.setLength(0);
 
 
 		}
 
-		// if we dont't have anything to send, skip
-		//		if (builder.length() == 0) {
-		//			log.debug("nothing to send; skipping the http request");
-		//			return;
-		//		}
-
-		// build url - ${key} and ${topic} can be replaced with message values
-		// the first record in the batch is used to build the url as we assume it will
-		// be consistent across all records.
-
 	}
 
+	private static boolean isReadyToSend(JSONObject bucket) {
+		Boolean result = false;
+		ArrayList<Boolean> check = new ArrayList<Boolean>();
+		ArrayList<String> arr = new ArrayList<String>();
+		
+		for(Object key : bucket.keySet()) {
+			arr = (ArrayList<String>) bucket.get(key);
+			if(arr.size() >= betchSize+1) {
+				check.add(true);
+			} else {
+				check.add(false);
+			}
+		}
+		
+		if(check.contains(false)) {
+			result = false;
+		} else {
+			result = true;
+		}
+		
+		return result;
+	}
+
+	
+	private static JSONObject sliding(JSONObject bucket) {
+		JSONObject slicedBucket = new JSONObject();
+
+		for(Object key : bucket.keySet()) {
+			ArrayList<String> arr = new ArrayList<String>();
+			arr = (ArrayList<String>) bucket.get(key);
+			// TODO: arr slice
+			slicedBucket.put(key,new ArrayList<String>(arr.subList(1, betchSize+1)));
+		}
+		
+		return slicedBucket;
+	}
+	
 	private String buildRecord(SinkRecord record) {
 		// add payload
 		String value = record.value().toString();
@@ -297,3 +300,4 @@ public class HttpApiWriter {
 	}
 
 }
+

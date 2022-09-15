@@ -20,6 +20,7 @@ import org.apache.kafka.connect.errors.RetriableException;
 import org.apache.kafka.connect.sink.SinkRecord;
 import org.apache.kafka.connect.sink.SinkTaskContext;
 import org.easymock.EasyMockSupport;
+import org.json.simple.parser.ParseException;
 import org.junit.Test;
 
 import java.io.IOException;
@@ -35,7 +36,7 @@ import static org.junit.Assert.fail;
 public class HttpSinkTaskTest extends EasyMockSupport {
 
     @Test
-    public void retries() throws IOException {
+    public void retries() throws IOException, ParseException {
         final int maxRetries = 2;
         final int retryBackoffMs = 1000;
 
