@@ -43,7 +43,7 @@ public class HttpApiWriter {
 	private JSONObject responseResultObject = new JSONObject();
 	private ArrayList<String> exceptKeys = new ArrayList<String>();
 	private KafkaProducer<String, String> producer;
-	private static Integer betchSize = 10;
+	private static Integer betchSize;
 	private JSONParser jsonParser = new JSONParser();
 
 	HttpApiWriter(final HttpSinkConfig config) {
@@ -56,11 +56,12 @@ public class HttpApiWriter {
 
 		producer = new KafkaProducer<String, String>(prop);
 		exceptKeys.add("tmpA");
+		betchSize = config.batchMaxSize;
 
 	}
 
 	public void write(final Collection<SinkRecord> records) throws IOException {
-		log.info("SSUL write 1234!");
+		log.info("SSUL write 1234! betchSize: " + betchSize);
 		for (SinkRecord record : records) {
 
 			// build batch key
