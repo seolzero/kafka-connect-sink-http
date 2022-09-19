@@ -109,7 +109,7 @@ public class HttpApiWriter {
 			try {	
 				
 				JSONObject jsonObject = (JSONObject) jsonParser.parse(record.value().toString());
-				System.out.println(">>>>>>>>>>>>>>>>>>jsonObject: "+ jsonObject);
+				System.out.println(">>>>"+ record0.topic() +">>>>>>>>>>>>>>jsonObject: "+ jsonObject );
 				
 				for(Object key : jsonObject.keySet()) {
 					// record에 제외하고 싶은 키는 skip
@@ -224,6 +224,12 @@ public class HttpApiWriter {
 						}
 						con.disconnect();
 						
+						/*
+						 * builder 초기화
+						 * */
+						System.out.println("========================================builder clear");
+						builder.setLength(0);
+						
 					}
 					
 				}
@@ -233,11 +239,7 @@ public class HttpApiWriter {
 				e.printStackTrace();
 			}
 
-			/*
-			 * builder 초기화
-			 * */
-			System.out.println("========================================clear");
-			builder.setLength(0);
+
 
 
 		}
